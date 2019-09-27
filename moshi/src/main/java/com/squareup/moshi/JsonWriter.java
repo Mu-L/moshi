@@ -367,6 +367,8 @@ public abstract class JsonWriter implements Closeable, Flushable {
    */
   public abstract JsonWriter value(BufferedSource source) throws IOException;
 
+  public abstract BufferedSink valueSink() throws IOException;
+
   /**
    * Changes the writer to treat the next value as a string name. This is useful for map adapters so
    * that arbitrary type adapters can use {@link #value} to write a name value.

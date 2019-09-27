@@ -17,9 +17,12 @@ package com.squareup.moshi;
 
 import java.io.IOException;
 import javax.annotation.Nullable;
+import okio.Buffer;
 import okio.BufferedSink;
 import okio.BufferedSource;
+import okio.Okio;
 import okio.Sink;
+import okio.Timeout;
 
 import static com.squareup.moshi.JsonScope.DANGLING_NAME;
 import static com.squareup.moshi.JsonScope.EMPTY_ARRAY;
@@ -28,6 +31,7 @@ import static com.squareup.moshi.JsonScope.EMPTY_OBJECT;
 import static com.squareup.moshi.JsonScope.NONEMPTY_ARRAY;
 import static com.squareup.moshi.JsonScope.NONEMPTY_DOCUMENT;
 import static com.squareup.moshi.JsonScope.NONEMPTY_OBJECT;
+import static com.squareup.moshi.JsonScope.STREAMING_VALUE;
 
 final class JsonUtf8Writer extends JsonWriter {
 
@@ -115,7 +119,7 @@ final class JsonUtf8Writer extends JsonWriter {
       flattenStackSize = ~flattenStackSize;
       return this;
     }
-    beforeValue();
+    beforeValue(false);
     checkStack();
     pushScope(empty);
     pathIndices[stackSize - 1] = 0;
@@ -184,7 +188,7 @@ final class JsonUtf8Writer extends JsonWriter {
       return name(value);
     }
     writeDeferredName();
-    beforeValue();
+    beforeValue(false);
     string(sink, value);
     pathIndices[stackSize - 1]++;
     return this;
@@ -203,7 +207,7 @@ final class JsonUtf8Writer extends JsonWriter {
         return this; // skip the name and the value
       }
     }
-    beforeValue();
+    beforeValue(false);
     sink.writeUtf8("null");
     pathIndices[stackSize - 1]++;
     return this;
@@ -215,7 +219,7 @@ final class JsonUtf8Writer extends JsonWriter {
           "Boolean cannot be used as a map key in JSON at path " + getPath());
     }
     writeDeferredName();
-    beforeValue();
+    beforeValue(false);
     sink.writeUtf8(value ? "true" : "false");
     pathIndices[stackSize - 1]++;
     return this;
@@ -236,7 +240,7 @@ final class JsonUtf8Writer extends JsonWriter {
       return name(Double.toString(value));
     }
     writeDeferredName();
-    beforeValue();
+    beforeValue(false);
     sink.writeUtf8(Double.toString(value));
     pathIndices[stackSize - 1]++;
     return this;
@@ -247,7 +251,7 @@ final class JsonUtf8Writer extends JsonWriter {
       return name(Long.toString(value));
     }
     writeDeferredName();
-    beforeValue();
+    beforeValue(false);
     sink.writeUtf8(Long.toString(value));
     pathIndices[stackSize - 1]++;
     return this;
@@ -267,7 +271,7 @@ final class JsonUtf8Writer extends JsonWriter {
       return name(string);
     }
     writeDeferredName();
-    beforeValue();
+    beforeValue(false);
     sink.writeUtf8(string);
     pathIndices[stackSize - 1]++;
     return this;
@@ -279,10 +283,34 @@ final class JsonUtf8Writer extends JsonWriter {
           "BufferedSource cannot be used as a map key in JSON at path " + getPath());
     }
     writeDeferredName();
-    beforeValue();
+    beforeValue(false);
     sink.writeAll(source);
     pathIndices[stackSize - 1]++;
     return this;
+  }
+
+  @Override public BufferedSink valueSink() throws IOException {
+    if (promoteValueToName) {
+      throw new IllegalStateException(
+          "BufferedSink cannot be used as a map key in JSON at path " + getPath());
+    }
+    writeDeferredName();
+    final int nextTop = beforeValue(true);
+    return Okio.buffer(new Sink() {
+      @Override public void write(Buffer source, long byteCount) throws IOException {
+        sink.write(source, byteCount);
+      }
+
+      @Override public void flush() {}
+
+      @Override public Timeout timeout() {
+        return Timeout.NONE;
+      }
+
+      @Override public void close() {
+        replaceTop(nextTop);
+      }
+    });
   }
 
   /**
@@ -379,7 +407,8 @@ final class JsonUtf8Writer extends JsonWriter {
    * closing bracket or another element.
    */
   @SuppressWarnings("fallthrough")
-  private void beforeValue() throws IOException {
+  private int beforeValue(boolean streaming) throws IOException {
+    int nextTop;
     switch (peekScope()) {
       case NONEMPTY_DOCUMENT:
         if (!lenient) {
@@ -388,26 +417,29 @@ final class JsonUtf8Writer extends JsonWriter {
         }
         // fall-through
       case EMPTY_DOCUMENT: // first in document
-        replaceTop(NONEMPTY_DOCUMENT);
-        break;
-
-      case EMPTY_ARRAY: // first in array
-        replaceTop(NONEMPTY_ARRAY);
-        newline();
+        nextTop = NONEMPTY_DOCUMENT;
         break;
 
       case NONEMPTY_ARRAY: // another in array
         sink.writeByte(',');
+        // fall-through
+      case EMPTY_ARRAY: // first in array
         newline();
+        nextTop = NONEMPTY_ARRAY;
         break;
 
       case DANGLING_NAME: // value for name
+        nextTop = NONEMPTY_OBJECT;
         sink.writeUtf8(separator);
-        replaceTop(NONEMPTY_OBJECT);
         break;
+
+      case STREAMING_VALUE:
+        throw new IllegalStateException("Sink from valueSink() was not closed");
 
       default:
         throw new IllegalStateException("Nesting problem.");
     }
+    replaceTop(streaming ? STREAMING_VALUE : nextTop);
+    return nextTop;
   }
 }

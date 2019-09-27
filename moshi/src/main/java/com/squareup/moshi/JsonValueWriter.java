@@ -21,7 +21,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import javax.annotation.Nullable;
+import okio.Buffer;
+import okio.BufferedSink;
 import okio.BufferedSource;
+import okio.Okio;
+import okio.Sink;
+import okio.Timeout;
 
 import static com.squareup.moshi.JsonScope.EMPTY_ARRAY;
 import static com.squareup.moshi.JsonScope.EMPTY_DOCUMENT;
@@ -241,6 +246,26 @@ final class JsonValueWriter extends JsonWriter {
     }
     pathIndices[stackSize - 1]++;
     return this;
+  }
+
+  @Override public BufferedSink valueSink() {
+    return Okio.buffer(new Sink() {
+      private final Buffer buffer = new Buffer();
+
+      @Override public void write(Buffer source, long byteCount) {
+        buffer.write(source, byteCount);
+      }
+
+      @Override public void flush() {}
+
+      @Override public Timeout timeout() {
+        return Timeout.NONE;
+      }
+
+      @Override public void close() throws IOException {
+        value(buffer);
+      }
+    });
   }
 
   @Override public void close() throws IOException {
