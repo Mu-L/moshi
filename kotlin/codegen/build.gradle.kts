@@ -22,19 +22,14 @@ plugins {
   kotlin("jvm")
   kotlin("kapt")
   id("com.vanniktech.maven.publish")
-  id("com.github.johnrengelman.shadow") version "6.0.0"
-}
-
-configure<JavaPluginExtension> {
-  sourceCompatibility = JavaVersion.VERSION_1_8
-  targetCompatibility = JavaVersion.VERSION_1_8
+  id("com.github.johnrengelman.shadow") version "7.0.0"
 }
 
 tasks.withType<KotlinCompile>().configureEach {
   kotlinOptions {
     jvmTarget = "1.8"
-    freeCompilerArgs = listOf(
-      "-progressive",
+    @Suppress("SuspiciousCollectionReassignment")
+    freeCompilerArgs += listOf(
       "-Xopt-in=com.squareup.kotlinpoet.metadata.KotlinPoetMetadataPreview"
     )
   }
@@ -65,9 +60,11 @@ dependencies {
     exclude(group = "org.jetbrains.kotlin")
     exclude(group = "com.squareup", module = "kotlinpoet")
   }
+  api(Dependencies.KotlinPoet.elementsClassInspector)
   shade(Dependencies.KotlinPoet.elementsClassInspector) {
     exclude(group = "org.jetbrains.kotlin")
     exclude(group = "com.squareup", module = "kotlinpoet")
+    exclude(group = "com.google.guava")
   }
   api(Dependencies.asm)
 
@@ -83,7 +80,6 @@ dependencies {
   testImplementation(Dependencies.Testing.junit)
   testImplementation(Dependencies.Testing.truth)
   testImplementation(Dependencies.Testing.compileTesting)
-  testImplementation(Dependencies.okio2)
 }
 
 val relocateShadowJar = tasks.register<ConfigureShadowRelocation>("relocateShadowJar") {
@@ -106,6 +102,6 @@ val shadowJar = tasks.shadowJar.apply {
 }
 
 artifacts {
-  runtime(shadowJar)
+  runtimeOnly(shadowJar)
   archives(shadowJar)
 }

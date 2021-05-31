@@ -28,6 +28,8 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.ToJson
 import com.squareup.moshi.adapter
 import com.squareup.moshi.internal.NullSafeJsonAdapter
+import com.squareup.moshi.kotlin.codegen.annotation.UppercaseInAnnotationPackage
+import com.squareup.moshi.kotlin.codegen.annotation.UppercaseInAnnotationPackageJsonAdapter
 import org.intellij.lang.annotations.Language
 import org.junit.Assert.assertNull
 import org.junit.Assert.fail
@@ -509,6 +511,22 @@ class GeneratedAdaptersTest {
 
   @JsonClass(generateAdapter = true)
   class ConstructorParameterWithQualifier(@Uppercase(inFrench = true) var a: String, var b: String)
+
+  @Test fun constructorParameterWithQualifierInAnnotationPackage() {
+    val moshi = Moshi.Builder()
+      .add(UppercaseInAnnotationPackageJsonAdapter())
+      .build()
+    val jsonAdapter = moshi.adapter<ConstructorParameterWithQualifierInAnnotationPackage>()
+
+    val encoded = ConstructorParameterWithQualifierInAnnotationPackage("Android")
+    assertThat(jsonAdapter.toJson(encoded)).isEqualTo("""{"a":"ANDROID"}""")
+
+    val decoded = jsonAdapter.fromJson("""{"a":"Android"}""")!!
+    assertThat(decoded.a).isEqualTo("android")
+  }
+
+  @JsonClass(generateAdapter = true)
+  class ConstructorParameterWithQualifierInAnnotationPackage(@UppercaseInAnnotationPackage var a: String)
 
   @Test fun propertyWithQualifier() {
     val moshi = Moshi.Builder()
@@ -1173,11 +1191,14 @@ class GeneratedAdaptersTest {
   annotation class Uppercase(val inFrench: Boolean, val onSundays: Boolean = false)
 
   class UppercaseJsonAdapter {
-    @ToJson fun toJson(@Uppercase(inFrench = true) s: String): String {
-      return s.toUpperCase(Locale.US)
+    @ToJson
+    fun toJson(@Uppercase(inFrench = true) s: String): String {
+      return s.uppercase(Locale.US)
     }
-    @FromJson @Uppercase(inFrench = true) fun fromJson(s: String): String {
-      return s.toLowerCase(Locale.US)
+    @FromJson
+    @Uppercase(inFrench = true)
+    fun fromJson(s: String): String {
+      return s.lowercase(Locale.US)
     }
   }
 
@@ -1361,7 +1382,37 @@ class GeneratedAdaptersTest {
 
   @JsonClass(generateAdapter = true)
   data class MultipleGenerics<A, B, C, D>(val prop: String)
+
+  @Test fun functionPropertyTypes() {
+    val adapter = moshi.adapter<LambdaTypeNames>()
+    val json = "{\"id\":\"value\"}"
+    assertThat(adapter.fromJson(json)).isEqualTo(LambdaTypeNames("value"))
+  }
+
+  // Regression test for https://github.com/square/moshi/issues/1265
+  @JsonClass(generateAdapter = true)
+  data class LambdaTypeNames(
+    val id: String,
+    @Transient
+    val simple: ((String) -> Boolean)? = null,
+    // Receivers count as the first param, just annotated with a special annotation to indicate it's a receiver
+    @Transient
+    val receiver: (String.(String) -> Boolean)? = null,
+    // Tests that we use `FunctionN` since it has more than 23 params
+    @Transient
+    val arity: (String.(String, String, String, String, String, String, String, String, String, String, String, String, String, String, String, String, String, String, String, String, String, String) -> Boolean)? = null,
+  )
 }
+
+// Regression test for https://github.com/square/moshi/issues/1277
+// Compile-only test
+@JsonClass(generateAdapter = true)
+data class OtherTestModel(val TestModel: TestModel? = null)
+@JsonClass(generateAdapter = true)
+data class TestModel(
+  val someVariable: Int,
+  val anotherVariable: String
+)
 
 // Regression test for https://github.com/square/moshi/issues/1022
 // Compile-only test
@@ -1427,7 +1478,9 @@ data class SmokeTestType(
   val favoriteNullableArrayValues: Array<String?>,
   val nullableSetListMapArrayNullableIntWithDefault: Set<List<Map<String, Array<IntArray?>>>>? = null,
   val aliasedName: TypeAliasName = "Woah",
-  val genericAlias: GenericTypeAlias = listOf("Woah")
+  val genericAlias: GenericTypeAlias = listOf("Woah"),
+  // Regression test for https://github.com/square/moshi/issues/1272
+  val nestedArray: Array<Map<String, Any>>? = null
 )
 
 // Compile only, regression test for https://github.com/square/moshi/issues/848
